@@ -59,6 +59,27 @@ func (o *fakeOs) GetScanResults() ([]string, error) {
 	return []string{o.orderedResults[index]}, nil
 }
 
+func Test_ScannerAck(t *testing.T) {
+	os := fakeOs{
+		orderedResults: []string{"c1", "c2", "c3"},
+	}
+	spy := spyPeer{
+		ackC:      make(chan struct{}, 1),
+		stopC:     make(chan struct{}, 1),
+		sentScans: make(chan []string, 100),
+	}
+
+	scanSignal := make(chan time.Time)
+	s := NewScanner(&spy, &os, scanSignal)
+	go s.Start()
+
+	scanSignal <- time.Now()
+	_, err := spy.waitForMessages(1, 3*time.Second)
+	require.NoError(t, err, "Didn't receive original message")
+	_, err = spy.waitForMessages(1, 3*time.Second)
+	require.NoError(t, err, "Didn't receive retry message")
+}
+
 func Test_RunScanner(t *testing.T) {
 	os := fakeOs{
 		orderedResults: []string{"c1", "c2", "c3"},
