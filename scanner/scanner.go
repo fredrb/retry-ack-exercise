@@ -7,10 +7,10 @@ import (
 )
 
 type Scanner struct {
-	peer         Peer
-	osScanner    OSInterface
-	peerMessages chan []string
-	ticker       time.Duration
+	peer          Peer
+	osScanner     OSInterface
+	peerMessages  chan []string
+	runScanSignal <-chan time.Time
 }
 
 // OSInterface interacts with teh Operating System and runs a full scan.
@@ -33,20 +33,19 @@ type Peer interface {
 	SendScan([]string)
 }
 
-func NewScanner(peer Peer, os OSInterface, timer time.Duration) Scanner {
+func NewScanner(peer Peer, os OSInterface, runScan <-chan time.Time) Scanner {
 	return Scanner{
-		peer:         peer,
-		osScanner:    os,
-		ticker:       timer,
-		peerMessages: make(chan []string, 100),
+		peer:          peer,
+		osScanner:     os,
+		runScanSignal: runScan,
+		peerMessages:  make(chan []string),
 	}
 }
 
 func (s *Scanner) manageScanLoop(ctx context.Context) {
-	scanTicker := time.NewTicker(s.ticker)
 	for {
 		select {
-		case <-scanTicker.C:
+		case <-s.runScanSignal:
 			result, err := s.osScanner.GetScanResults()
 			if err != nil {
 				log.Printf("Failed to get scan results")

@@ -51,9 +51,14 @@ func Test_RunScanner(t *testing.T) {
 		sentScans: [][]string{},
 	}
 
-	s := NewScanner(&spy, &os, time.Millisecond)
+	scanSignal := make(chan time.Time)
+	s := NewScanner(&spy, &os, scanSignal)
 	go s.Start()
-	time.Sleep(time.Second)
+
+	for i := 0; i < 5; i++ {
+		scanSignal <- time.Now()
+	}
+	time.Sleep(time.Millisecond)
 
 	assert.Greater(t, len(spy.sentScans), 4)
 	assert.Equal(t, spy.sentScans[0][0], "c1")
