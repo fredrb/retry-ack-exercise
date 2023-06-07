@@ -11,6 +11,8 @@ type Scanner struct {
 	osScanner     OSInterface
 	peerMessages  chan []string
 	runScanSignal <-chan time.Time
+
+	lastSent []string
 }
 
 // OSInterface interacts with teh Operating System and runs a full scan.
@@ -67,6 +69,7 @@ func (s *Scanner) manageStream(ctx context.Context) {
 			if !more {
 				return
 			}
+			s.lastSent = m
 			s.peer.SendScan(m)
 		case <-ctx.Done():
 			if len(s.peerMessages) != 0 {
@@ -81,6 +84,16 @@ func (s *Scanner) Start() {
 	log.Printf("Starting Scanner component")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				s.peerMessages <- s.lastSent
+			}
+		}
+	}()
 
 	go s.manageScanLoop(ctx)
 	go s.manageStream(ctx)
