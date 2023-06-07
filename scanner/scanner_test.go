@@ -1,7 +1,9 @@
 package scanner
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
@@ -10,7 +12,7 @@ type spyPeer struct {
 	ackC  chan struct{}
 	stopC chan struct{}
 
-	sentScans [][]string
+	sentScans chan []string
 }
 
 func (p *spyPeer) ScanReceivedAckC() chan struct{} {
@@ -18,11 +20,27 @@ func (p *spyPeer) ScanReceivedAckC() chan struct{} {
 }
 
 func (p *spyPeer) SendScan(s []string) {
-	p.sentScans = append(p.sentScans, s)
+	p.sentScans <- s
 }
 
 func (p *spyPeer) StopSignal() chan struct{} {
 	return p.stopC
+}
+
+func (p *spyPeer) waitForMessages(numMessage int, timeout time.Duration) ([][]string, error) {
+	receivedMessages := make([][]string, numMessage)
+	for i := 0; i < numMessage; i++ {
+		select {
+		case msg, more := <-p.sentScans:
+			if !more {
+				return nil, errors.New("should not have closed")
+			}
+			receivedMessages[i] = msg
+		case <-time.After(timeout):
+			return nil, errors.New("timeout reached waiting for scan result")
+		}
+	}
+	return receivedMessages, nil
 }
 
 type fakeOs struct {
@@ -48,7 +66,7 @@ func Test_RunScanner(t *testing.T) {
 	spy := spyPeer{
 		ackC:      make(chan struct{}, 1),
 		stopC:     make(chan struct{}, 1),
-		sentScans: [][]string{},
+		sentScans: make(chan []string, 100),
 	}
 
 	scanSignal := make(chan time.Time)
@@ -60,9 +78,12 @@ func Test_RunScanner(t *testing.T) {
 	}
 	time.Sleep(time.Millisecond)
 
-	assert.Greater(t, len(spy.sentScans), 4)
-	assert.Equal(t, spy.sentScans[0][0], "c1")
-	assert.Equal(t, spy.sentScans[1][0], "c2")
-	assert.Equal(t, spy.sentScans[2][0], "c3")
-	assert.Equal(t, spy.sentScans[3][0], "c3")
+	receivedMessage, err := spy.waitForMessages(4, 10*time.Second)
+	require.NoError(t, err)
+
+	require.Len(t, receivedMessage, 4)
+	assert.Equal(t, receivedMessage[0][0], "c1")
+	assert.Equal(t, receivedMessage[1][0], "c2")
+	assert.Equal(t, receivedMessage[2][0], "c3")
+	assert.Equal(t, receivedMessage[3][0], "c3")
 }
